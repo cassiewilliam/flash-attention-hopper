@@ -15,96 +15,106 @@
 
 // Conversion Utility to convert RMEM from one type to another.
 // Used for conversion from AccumType to PrecType.
-template <typename To_type, typename From_type, typename Fragment>
-inline __device__ auto convert_type(Fragment const &tensor) {
-  constexpr int numel = decltype(size(tensor))::value;
-  cutlass::NumericArrayConverter<To_type, From_type, numel> convert_op;
-  // Note: this requires tensor to be "contiguous."
-  auto frag =
-      convert_op(*reinterpret_cast<const cutlass::Array<From_type, numel> *>(
-          tensor.data()));
-  return make_tensor(make_rmem_ptr<To_type>(&frag), tensor.layout());
+template<typename To_type, typename From_type, typename Fragment>
+inline __device__ auto convert_type(Fragment const& tensor)
+{
+    constexpr int                                             numel = decltype(size(tensor))::value;
+    cutlass::NumericArrayConverter<To_type, From_type, numel> convert_op;
+    // Note: this requires tensor to be "contiguous."
+    auto frag =
+        convert_op(*reinterpret_cast<const cutlass::Array<From_type, numel>*>(
+            tensor.data()));
+    return make_tensor(make_rmem_ptr<To_type>(&frag), tensor.layout());
 }
 
 // Reshape Utility for converting the layout from accumulator of GEMM-I
 // to Operand A of GEMM-II.
-struct ReshapeTStoTP {
-  template <class FragmentC, class FragmentQ>
-  __device__ auto operator()(FragmentC &&tC, FragmentQ &&tQ) {
+struct ReshapeTStoTP
+{
+    template<class FragmentC, class FragmentQ>
+    __device__ auto operator()(FragmentC&& tC, FragmentQ&& tQ)
+    {
 
-    // get the layout of one row of Q.
-    auto layoutQRow = make_ordered_layout(tQ(_, 0, _).layout());
-    // get the layout of  M dimension of C.
-    auto layoutCM = get<1>(tC.layout());
-    return make_layout(get<0>(layoutQRow), layoutCM, get<1>(layoutQRow));
-  }
+        // get the layout of one row of Q.
+        auto layoutQRow = make_ordered_layout(tQ(_, 0, _).layout());
+        // get the layout of  M dimension of C.
+        auto layoutCM = get<1>(tC.layout());
+        return make_layout(get<0>(layoutQRow), layoutCM, get<1>(layoutQRow));
+    }
 };
 
 // Need this register byte permute/shuffle to match register layout of
 // (FP8 downcasted) accumulator of GEMM-I to FP8 operand A of GEMM-II.
-struct ReorgCFp8toAFp8{
-  int selectorEx0;
-  int selectorEx1;  
-  int selectorEx4;
-  int selectorEx5;
-  int upper_map[4] = {0,3,1,2};
-  int lower_map[4] = {1,2,0,3};
-  
-  
-CUTLASS_DEVICE ReorgCFp8toAFp8() {
-  int laneId = cutlass::canonical_lane_idx();
-  
-   if (laneId % 4 == 0 || laneId % 4 == 3) {
-     selectorEx0 = 0x3210;
-     selectorEx1 = 0x7654;
-     selectorEx4 = 0x5410;
-	   selectorEx5 = 0x7632;
-   } else {
-     selectorEx0 = 0x7654;
-     selectorEx1 = 0x3210;
-     selectorEx4 = 0x1054;
-	   selectorEx5 = 0x3276;
-   }  
-   
-}
+struct ReorgCFp8toAFp8
+{
+    int selectorEx0;
+    int selectorEx1;
+    int selectorEx4;
+    int selectorEx5;
+    int upper_map[4] = {0, 3, 1, 2};
+    int lower_map[4] = {1, 2, 0, 3};
 
-template <typename Fragment>
-CUTLASS_DEVICE auto operator()(Fragment &accum) {
 
-  using namespace cute;  
+    CUTLASS_DEVICE ReorgCFp8toAFp8()
+    {
+        int laneId = cutlass::canonical_lane_idx();
 
-  // First update `mi` to the max per-row
-  //
-  auto VT = shape<0>(accum); // number of vector elements per tile.
-  auto MT = shape<1>(accum); // number of tiles along M.
-  auto NT = shape<2>(accum); // number of tiles along N.
-
-  auto data = accum.data();
-  int n = 0;
-
-#pragma unroll
-  for (int i = 0; i < MT; ++i) {
-
-    // Traverse 2-rows + 2-cols (2x2) simultaneously.
-
-#pragma unroll
-    for (int k = 0; k < NT * size<2>(VT) / 2; ++k) {
-
-      auto upper = *reinterpret_cast<uint32_t*>(&data[n]);
-      auto lower = *reinterpret_cast<uint32_t*>(&data[n+4]);
-      
-      auto upper0 = __byte_perm(upper, lower, selectorEx0);
-      auto lower0 = __byte_perm(upper, lower, selectorEx1);      
-      upper0 = __shfl_sync(uint32_t(-1),upper0, upper_map[threadIdx.x%4],4);
-      lower0 = __shfl_sync(uint32_t(-1),lower0, lower_map[threadIdx.x%4],4);
-  
-      uint32_t *data_32bit = reinterpret_cast<uint32_t *>(&data[n]);
-      data_32bit[0] = __byte_perm(upper0, lower0, selectorEx4);
-      data_32bit[1] = __byte_perm(upper0, lower0, selectorEx5);
-      n += 8;
+        if (laneId % 4 == 0 || laneId % 4 == 3)
+        {
+            selectorEx0 = 0x3210;
+            selectorEx1 = 0x7654;
+            selectorEx4 = 0x5410;
+            selectorEx5 = 0x7632;
+        }
+        else
+        {
+            selectorEx0 = 0x7654;
+            selectorEx1 = 0x3210;
+            selectorEx4 = 0x1054;
+            selectorEx5 = 0x3276;
+        }
     }
-  }
-}
+
+    template<typename Fragment>
+    CUTLASS_DEVICE auto operator()(Fragment& accum)
+    {
+
+        using namespace cute;
+
+        // First update `mi` to the max per-row
+        //
+        auto VT = shape<0>(accum);   // number of vector elements per tile.
+        auto MT = shape<1>(accum);   // number of tiles along M.
+        auto NT = shape<2>(accum);   // number of tiles along N.
+
+        auto data = accum.data();
+        int  n    = 0;
+
+#pragma unroll
+        for (int i = 0; i < MT; ++i)
+        {
+
+            // Traverse 2-rows + 2-cols (2x2) simultaneously.
+
+#pragma unroll
+            for (int k = 0; k < NT * size<2>(VT) / 2; ++k)
+            {
+
+                auto upper = *reinterpret_cast<uint32_t*>(&data[n]);
+                auto lower = *reinterpret_cast<uint32_t*>(&data[n + 4]);
+
+                auto upper0 = __byte_perm(upper, lower, selectorEx0);
+                auto lower0 = __byte_perm(upper, lower, selectorEx1);
+                upper0      = __shfl_sync(uint32_t(-1), upper0, upper_map[threadIdx.x % 4], 4);
+                lower0      = __shfl_sync(uint32_t(-1), lower0, lower_map[threadIdx.x % 4], 4);
+
+                uint32_t* data_32bit = reinterpret_cast<uint32_t*>(&data[n]);
+                data_32bit[0]        = __byte_perm(upper0, lower0, selectorEx4);
+                data_32bit[1]        = __byte_perm(upper0, lower0, selectorEx5);
+                n += 8;
+            }
+        }
+    }
 };
 
 // Alternative version: tested to be slightly slower
@@ -115,8 +125,8 @@ CUTLASS_DEVICE auto operator()(Fragment &accum) {
 //   int selectorEx3;
 //   int selectorEx4;
 //   int selectorEx5;
-  
-  
+
+
 // CUTLASS_DEVICE ReorgCFp8toAFp8() {
 //   auto laneId = cutlass::canonical_lane_idx();
 //    if (laneId % 4 == 0 || laneId % 4 == 1) {
@@ -133,7 +143,7 @@ CUTLASS_DEVICE auto operator()(Fragment &accum) {
 // 	   selectorEx2 = 0x7654;
 // 	   selectorEx3 = 0x3210;
 //    }
-   
+
 //    if (laneId % 2  == 0) {
 // 	   selectorEx4 = 0x5410;
 // 	   selectorEx5 = 0x7632;
@@ -168,7 +178,7 @@ CUTLASS_DEVICE auto operator()(Fragment &accum) {
 
 //       auto upper = *reinterpret_cast<uint32_t*>(&data[n]);
 //       auto lower = *reinterpret_cast<uint32_t*>(&data[n+4]);
-      
+
 //       auto upper0 = __byte_perm(upper, lower, selectorEx0);
 //       auto lower0 = __byte_perm(upper, lower, selectorEx1);
 //       lower0 = __shfl_xor_sync(uint32_t(-1), lower0, 2);
@@ -177,7 +187,7 @@ CUTLASS_DEVICE auto operator()(Fragment &accum) {
 //       lower2 = __shfl_xor_sync(uint32_t(-1), lower2, 1);
 //       upper = __byte_perm(upper2, lower2, selectorEx4);
 //       lower = __byte_perm(upper2, lower2, selectorEx5);
-  
+
 //       uint32_t *data_32bit = reinterpret_cast<uint32_t *>(&data[n]);
 //       data_32bit[0] = upper;
 //       data_32bit[1] = lower;
