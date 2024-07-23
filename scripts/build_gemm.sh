@@ -4,14 +4,12 @@ mkdir -p bin
 nvcc -g \
      -forward-unknown-to-host-compiler \
      -DCUTLASS_ENABLE_CUBLAS=1 \
-     -I./include \
-     -I./lib/  \
-     -I./3rdparty/cutlass/include \
-     -I./3rdparty/cutlass/examples/common \
-     -I"/usr/local/cuda/include" \
-     -I/include \
-     -I/examples \
-     -I./3rdparty/cutlass/tools/util/include \
+     -I/home/workcode/include \
+     -I/home/workcode/lib/  \
+     -I/home/workcode/3rdparty/cutlass/include \
+     -I/home/workcode/3rdparty/cutlass/examples/common \
+     -I/usr/local/cuda/include \
+     -I/home/workcode/3rdparty/cutlass/tools/util/include \
      -O3 -DNDEBUG \
      --generate-code=arch=compute_90a,code=[sm_90a] \
      --generate-code=arch=compute_90a,code=[compute_90a] \
