@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 容器名称
-container_name="docker-env-vllm-splitwise"
+container_name="docker-env-fa-hopper"
 
 # 检查容器是否存在
 if docker inspect "$container_name" >/dev/null 2>&1; then
