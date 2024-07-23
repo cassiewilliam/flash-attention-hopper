@@ -10,7 +10,7 @@ nvcc -g \
      -I./3rdparty/cutlass/examples/common \
      -I"/usr/local/cuda/include" \
      -I/include \
-     -I/examples 
+     -I/examples \
      -I./3rdparty/cutlass/tools/util/include \
      -O3 -DNDEBUG \
      --generate-code=arch=compute_90a,code=[sm_90a] \
