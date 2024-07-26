@@ -1,34 +1,3 @@
-/***************************************************************************************************
- * Copyright (c) 2023 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights
- *reserved. SPDX-License-Identifier: BSD-3-Clause
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- * 1. Redistributions of source code must retain the above copyright notice,
- *this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright notice,
- * this list of conditions and the following disclaimer in the documentation
- * and/or other materials provided with the distribution.
- *
- * 3. Neither the name of the copyright holder nor the names of its
- * contributors may be used to endorse or promote products derived from
- * this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- *ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
- *LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- *CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- *SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- *INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- *CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- *ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- *POSSIBILITY OF SUCH DAMAGE.
- *
- **************************************************************************************************/
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 
@@ -46,25 +15,48 @@
 #include "gemm/gemm_tensor.hpp"
 #include "utils/cuda_launch.hpp"
 
-template <class ElementTypeA, class ElementTypeB, class SmemLayoutA,
+template <class ElementTypeA, 
+          class ElementTypeB, 
+          class SmemLayoutA,
           class SmemLayoutB>
-struct SharedStorage {
+struct SharedStorage 
+{
   cute::array_aligned<ElementTypeA, cute::cosize_v<SmemLayoutA>> smem_a;
   cute::array_aligned<ElementTypeB, cute::cosize_v<SmemLayoutB>> smem_b;
   cute::uint64_t tma_load_mbar[1];
 };
 
-template <class TiledMma, class ClusterShape, class TA, class TiledCopyA,
-          class TileShapeA, class GmemLayoutA, class SmemLayoutA, class TB,
-          class TiledCopyB, class TileShapeB, class GmemLayoutB,
-          class SmemLayoutB, class TC, class TileShapeC, class GmemLayoutC>
-__global__ static void gemm_device(
-    TA const *A, TA *A_out, CUTE_GRID_CONSTANT TiledCopyA const tma_load_a,
-    TileShapeA tile_shape_a, GmemLayoutA gmem_layout_a,
-    SmemLayoutA smem_layout_a, TB const *B, TB *B_out,
-    CUTE_GRID_CONSTANT TiledCopyB const tma_load_b, TileShapeB tile_shape_b,
-    GmemLayoutB gmem_layout_b, SmemLayoutB smem_layout_b, TC *C,
-    TileShapeC tile_shape_c, GmemLayoutC gmem_layout_c) {
+template <class TiledMma, 
+          class ClusterShape,
+          class TA,
+          class TiledCopyA,
+          class TileShapeA,
+          class GmemLayoutA,
+          class SmemLayoutA,
+          class TB,
+          class TiledCopyB,
+          class TileShapeB,
+          class GmemLayoutB,
+          class SmemLayoutB,
+          class TC,
+          class TileShapeC,
+          class GmemLayoutC>
+__global__ static void gemm_device(TA const *A,
+                                   TA *A_out,
+                                   CUTE_GRID_CONSTANT TiledCopyA const tma_load_a,
+                                   TileShapeA tile_shape_a,
+                                   GmemLayoutA gmem_layout_a,
+                                   SmemLayoutA smem_layout_a,
+                                   TB const *B,
+                                   TB *B_out,
+                                   CUTE_GRID_CONSTANT TiledCopyB const tma_load_b,
+                                   TileShapeB tile_shape_b,
+                                   GmemLayoutB gmem_layout_b,
+                                   SmemLayoutB smem_layout_b,
+                                   TC *C,
+                                   TileShapeC tile_shape_c,
+                                   GmemLayoutC gmem_layout_c)
+{
   using namespace cute;
   using X = Underscore;
   CUTE_STATIC_ASSERT_V(product_each(shape(tile_shape_a)) ==
@@ -308,8 +300,14 @@ __global__ static void gemm_device(
     constexpr int kTmaTransactionBytes =
         size(sA) * sizeof_bits_v<TA> / 8 + size(sB) * sizeof_bits_v<TB> / 8;
 
-    cfk::copy(tAgA(_, stage), tBgB(_, stage), tAsA(_, 0), tBsB(_, 0),
-              tma_load_a, tma_load_b, tma_load_mbar, mcast_mask_a,
+    cfk::copy(tAgA(_, stage),
+              tBgB(_, stage),
+              tAsA(_, 0),
+              tBsB(_, 0),
+              tma_load_a,
+              tma_load_b,
+              tma_load_mbar,
+              mcast_mask_a,
               mcast_mask_b);
     cfk::gemm(tiled_mma, tCrA, tCrB, tCrC);
 
@@ -336,7 +334,8 @@ __global__ static void gemm_device(
 template <typename TA, typename TB, typename TC, typename Alpha, typename Beta>
 void gemm(int m, int n, int k, Alpha alpha, TA const *A, int ldA, TB const *B,
           int ldB, Beta beta, TC *C, int ldC, TA *A_out, TB *B_out, int L,
-          cudaStream_t stream = 0) {
+          cudaStream_t stream = 0) 
+{
   using namespace cute;
 
   // Define shapes (dynamic)
@@ -653,7 +652,8 @@ void test_gemm(int m, int n, int k, int l) {
 #endif // CUTLASS_ENABLE_CUBLAS
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv) 
+{
   int type = 1; // 1 means tf32, 2 means half
   if (argc >= 2)
     sscanf(argv[1], "%d", &type);
@@ -680,8 +680,7 @@ int main(int argc, char **argv) {
     //      test_gemm<cutlass::tfloat32_t, cutlass::tfloat32_t, float, float>(m,
     //      n, k);
   } else if (type == 3) {
-    test_gemm<cutlass::half_t, cutlass::half_t, cutlass::half_t,
-              cutlass::half_t>(m, n, k, l);
+    test_gemm<cutlass::half_t, cutlass::half_t, cutlass::half_t, cutlass::half_t>(m, n, k, l);
   } else {
     std::cout << "invalid type value (1 | 2 | 3 are the only legal values)";
     exit(-1);
